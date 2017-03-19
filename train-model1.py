@@ -47,6 +47,12 @@ class IBMModel1(object):
         p_f_e_init = 1. / len(self.src_vocab)
         theta = defaultdict(lambda: p_f_e_init)
 
+        def _time_prior(p, e_i, e_len):
+            # if e_i == self.tgt_vocab['<null>']:
+            #     return p * 0.2
+            # return p * 0.8 / (e_len - 1)
+            return p
+
         for t in xrange(self.max_iter):
             # E step
             counts_e = defaultdict(float)
@@ -57,13 +63,13 @@ class IBMModel1(object):
                 tgt_sent = [self.tgt_vocab[w] for w in tgt_sent]
                 for j in xrange(len(src_sent)):
                     f_j = src_sent[j]
-                    marginal = sum(theta[(e_i, f_j)] for e_i in tgt_sent)
+                    marginal = sum(_time_prior(theta[(e_i, f_j)], e_i, len(tgt_sent)) for e_i in tgt_sent)
 
                     for i in xrange(len(tgt_sent)):
                         e_i = tgt_sent[i]
-                        p_fj_given_ei = theta[(e_i, f_j)] / marginal
-                        counts[(e_i, f_j)] += p_fj_given_ei
-                        counts_e[e_i] += p_fj_given_ei
+                        align_posterior = theta[(e_i, f_j)] / marginal
+                        counts[(e_i, f_j)] += align_posterior
+                        counts_e[e_i] += align_posterior
 
             # M step
             for e_i, f_j in counts:
@@ -119,13 +125,13 @@ class IBMModel1(object):
 if __name__ == '__main__':
     src_vocab = defaultdict(lambda: len(src_vocab))
     tgt_vocab = defaultdict(lambda: len(tgt_vocab))
+    src_vocab['<null>'] = 0
     tgt_vocab['<null>'] = 0
 
     bitext = []
     for src_sent, tgt_sent in zip(open(sys.argv[1]), open(sys.argv[2])):
         src_words = src_sent.strip().split(' ')
         tgt_words = tgt_sent.strip().split(' ')
-        tgt_words.append('<null>')
 
         for src_word in src_words:
             wid = src_vocab[src_word]
@@ -134,11 +140,30 @@ if __name__ == '__main__':
 
         bitext.append((src_words, tgt_words))
 
-    model1 = IBMModel1(bitext, src_vocab, tgt_vocab)
-    model1.train()
-    alignments = model1.align()
+    fe_bitext = [(src_sent, tgt_sent + ['<null>']) for src_sent, tgt_sent in bitext]
+    ef_bitext = [(tgt_sent, src_sent + ['<null>']) for src_sent, tgt_sent in bitext]
+
+    # fe_model1 = IBMModel1(fe_bitext, src_vocab, tgt_vocab)
+    # fe_model1.train()
+    # fe_alignments = fe_model1.align()
+
+    ef_model1 = IBMModel1(ef_bitext, tgt_vocab, src_vocab)
+    ef_model1.train()
+    ef_alignments = ef_model1.align()
+
+    # with open(sys.argv[3] + '.fe', 'w') as f:
+    #     for cur_alignments in fe_alignments:
+    #         line = ' '.join('%d-%d' % (i, j) for j, i in cur_alignments)
+    #         f.write(line + '\n')
 
     with open(sys.argv[3], 'w') as f:
-        for cur_alignments in alignments:
-            line = ' '.join('%d-%d' % (i, j) for j, i in cur_alignments)
+        for cur_alignments in ef_alignments:
+            line = ' '.join('%d-%d' % (i, j) for i, j in cur_alignments)
             f.write(line + '\n')
+
+    # with open(sys.argv[3], 'w') as f:
+    #     for fe_cur_alignments, ef_cur_alignments in zip(fe_alignments, ef_alignments):
+    #         valid_alignments = [(j, i) for j, i in fe_cur_alignments if (i, j) in ef_cur_alignments]
+    #         line = ' '.join('%d-%d' % (i, j) for j, i in valid_alignments)
+    #         # line = ' '.join('%d-%d' % (i, j) for i, j in ef_cur_alignments)
+    #         f.write(line + '\n')
