@@ -43,9 +43,26 @@ class IBMModel1(object):
     def train(self):
         print('start training... Source Vocab[%d], Target Vocab[%d]' % (len(self.src_vocab), len(self.tgt_vocab)))
 
-        # initialize parameters
-        p_f_e_init = 1. / len(self.src_vocab)
-        theta = defaultdict(lambda: p_f_e_init)
+        # initialize p(f_j|e_i)
+
+        # p_f_e_init = 1. / len(self.src_vocab)
+        # theta = defaultdict(lambda: p_f_e_init)
+
+        theta = dict()
+        counts_e = defaultdict(lambda: set())
+        for src_sent, tgt_sent in self.bitext:
+            src_sent = [self.src_vocab[w] for w in src_sent]
+            tgt_sent = [self.tgt_vocab[w] for w in tgt_sent]
+
+            for f_j in src_sent:
+                for e_i in tgt_sent:
+                    theta[(e_i, f_j)] = 0.
+                    counts_e[e_i].add(f_j)
+
+        for e_i, f_j in theta:
+            theta[(e_i, f_j)] = 1. / len(counts_e[e_i])
+
+        del counts_e
 
         def _time_prior(p, e_i, e_len):
             # if e_i == self.tgt_vocab['<null>']:
