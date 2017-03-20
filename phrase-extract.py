@@ -63,9 +63,9 @@ class PhraseExtractor(object):
 
                         # Extend source phrase by adding unaligned words
                         j1_prime = j1
-                        while j1_prime >= 0 and j1_prime == j1 or len(f_aligned_words[j1]) == 0:  # Check that j1 is unaligned
+                        while j1_prime >= 0 and (j1_prime == j1 or len(f_aligned_words[j1_prime]) == 0):  # Check that j1 is unaligned
                             j2_prime = j2
-                            while j2_prime < len(f) and j2_prime == j2 or len(f_aligned_words[j2]) == 0:  # Check that j2 is unaligned
+                            while j2_prime < len(f) and (j2_prime == j2 or len(f_aligned_words[j2_prime]) == 0):  # Check that j2 is unaligned
                                 f_phrase = f[j1_prime: j2_prime + 1]
 
                                 if self.is_valid_phrase_pair(f_phrase, e_phrase):
@@ -78,8 +78,10 @@ class PhraseExtractor(object):
         return extracted_phrases
 
     def extract_phrase(self):
+        from nltk.translate.phrase_based import phrase_extraction
         extracted_phrases_counts = defaultdict(lambda: defaultdict(float))
-        for (f, e), cur_alignments in zip(self.bitext, self.alignments):
+
+        for idx, ((f, e), cur_alignments) in enumerate(zip(self.bitext, self.alignments)):
             f_aligned_words = defaultdict(set)
             e_aligned_words = defaultdict(set)
             for j, i in cur_alignments:
@@ -91,6 +93,11 @@ class PhraseExtractor(object):
                 extracted_phrases_counts[e_phrase][f_phrase] += 1.
             #     print(f_phrase + ' --- ' + e_phrase)
 
+            # nltk
+            # cur_alignments_reversed = [(i, j) for j, i in cur_alignments] # english, german
+            # cur_extracted_phrases_nltk = phrase_extraction(' '.join(e), ' '.join(f), cur_alignments_reversed, max_phrase_length=3)
+            # for (i_1, i_2), (j_1, j_2), e_phrase, f_phrase in cur_extracted_phrases_nltk:
+            #     extracted_phrases_counts[e_phrase][f_phrase] += 1.
 
         # compute p(f|e)
         for e_phrase in extracted_phrases_counts:
@@ -111,6 +118,9 @@ class PhraseExtractor(object):
         #     return self.is_valid_phrase(f_phrase) and self.is_valid_phrase(e_phrase)
 
         # return False
+        if len(f_phrase) > 3:
+            return False
+
         return True
         # f_has_punct = any(w in string.punctuation for w in f_phrase)
         # e_has_punct = any(w in string.punctuation for w in e_phrase)
@@ -147,6 +157,7 @@ if __name__ == '__main__':
 
         alignments.append(cur_alignments)
 
+    print('run phrase extraction algorithm')
     extractor = PhraseExtractor(bitext, alignments, src_word_freq, tgt_word_freq, max_phrase_len=3)
     extracted_phrases_counts = extractor.extract_phrase()
 
