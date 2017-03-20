@@ -6,6 +6,7 @@ from itertools import chain
 
 import numpy as np
 import math
+import string
 import sys
 from collections import defaultdict, Counter
 
@@ -32,10 +33,13 @@ def quasi_consec(tp, f_aligned_words):
 
 
 class PhraseExtractor(object):
-    def __init__(self, bitext, alignments, max_phrase_len=3):
+    def __init__(self, bitext, alignments, src_word_freq, tgt_word_freq, max_phrase_len=3):
         self.bitext = bitext
         self.alignments = alignments
         self.max_phrase_len = max_phrase_len
+
+        self.src_word_freq = src_word_freq
+        self.tgt_word_freq = tgt_word_freq
 
     def extract_phrase_in_sent(self, e_aligned_words, f_aligned_words, e, f):
         extracted_phrases = []
@@ -55,7 +59,7 @@ class PhraseExtractor(object):
                     if len(sp) != 0 and all(i1 <= i <= i2 for i in sp):
                         e_phrase = e[i1: i2 + 1]
                         f_phrase = f[j1: j2 + 1]
-                        # extracted_phrases.append((e_phrase, f_phrase))
+                        # extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
 
                         # Extend source phrase by adding unaligned words
                         j1_prime = j1
@@ -63,7 +67,10 @@ class PhraseExtractor(object):
                             j2_prime = j2
                             while j2_prime < len(f) and j2_prime == j2 or len(f_aligned_words[j2]) == 0:  # Check that j2 is unaligned
                                 f_phrase = f[j1_prime: j2_prime + 1]
-                                extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
+
+                                if self.is_valid_phrase_pair(f_phrase, e_phrase):
+                                    extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
+
                                 j2_prime += 1
 
                             j1_prime -= 1
@@ -93,11 +100,35 @@ class PhraseExtractor(object):
 
         return extracted_phrases_counts
 
+    def is_valid_phrase(self, p):
+        if len(p) > 1 and any(w in string.punctuation for w in p):
+            return False
+
+        return True
+
+    def is_valid_phrase_pair(self, f_phrase, e_phrase):
+        # if all(self.src_word_freq[p] > 1 for p in f_phrase) and all(self.tgt_word_freq[p] > 1 for p in e_phrase):
+        #     return self.is_valid_phrase(f_phrase) and self.is_valid_phrase(e_phrase)
+
+        # return False
+        return True
+        # f_has_punct = any(w in string.punctuation for w in f_phrase)
+        # e_has_punct = any(w in string.punctuation for w in e_phrase)
+
+        # is_valid = not (f_has_punct != e_has_punct)
+
+        # return True
+
+
 if __name__ == '__main__':
     bitext = []
+    src_word_freq = Counter()
+    tgt_word_freq = Counter()
     for src_sent, tgt_sent in zip(open(sys.argv[1]), open(sys.argv[2])):
         src_words = src_sent.strip().split(' ')
+        src_word_freq.update(src_words)
         tgt_words = tgt_sent.strip().split(' ')
+        tgt_word_freq.update(tgt_words)
 
         bitext.append((src_words, tgt_words))
 
@@ -116,7 +147,7 @@ if __name__ == '__main__':
 
         alignments.append(cur_alignments)
 
-    extractor = PhraseExtractor(bitext, alignments)
+    extractor = PhraseExtractor(bitext, alignments, src_word_freq, tgt_word_freq, max_phrase_len=3)
     extracted_phrases_counts = extractor.extract_phrase()
 
     with open(sys.argv[4], 'w') as f:

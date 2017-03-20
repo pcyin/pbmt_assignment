@@ -3,6 +3,8 @@ from __future__ import print_function
 import numpy as np
 import sys
 from collections import defaultdict
+from joblib import Parallel, delayed
+import dill
 
 
 def argmax_j(f, e_i, theta):
@@ -139,6 +141,192 @@ class IBMModel1(object):
 
         return alignments
 
+
+class IBMModel2(object):
+    def __init__(self, bitext, theta, src_vocab, tgt_vocab, max_iter=10):
+        self.bitext = bitext
+        self.max_iter = max_iter
+        self.src_vocab = src_vocab
+        self.tgt_vocab = tgt_vocab
+        self.theta = theta
+        self.epsilon = 1. / max(len(src_sent) for src_sent, tgt_sent in bitext)
+
+    @staticmethod
+    def bucketize(e_len, f_len):
+        # return 1, 1
+        return e_len, f_len
+        # def _bucketize(l):
+        #     if l < 10:
+        #         return (l / 3) * 3
+        #     elif l < 50:
+        #         return (l / 10) * 10
+        #     else:
+        #         return 50
+
+        # return _bucketize(e_len), _bucketize(f_len)
+
+    def train(self):
+        print('start training IBM Model 2... Source Vocab[%d], Target Vocab[%d]' % (len(self.src_vocab), len(self.tgt_vocab)))
+
+        # initialize alignment probabilities
+        align_prob = defaultdict(float)
+
+        for src_sent, tgt_sent in self.bitext:
+            e_len = len(tgt_sent)
+            f_len = len(src_sent)
+
+            e_len_key, f_len_key = self.bucketize(e_len, f_len)
+            for j in xrange(f_len):
+                for i in xrange(e_len):
+                    align_prob[(i, j, f_len_key, e_len_key)] = 1. / e_len
+
+        theta = self.theta
+
+        for t in xrange(self.max_iter):
+            # E step
+            counts_f_given_e = defaultdict(float)
+            counts_e = defaultdict(float)
+
+            counts_i_given_j = defaultdict(float)
+            counts_j = defaultdict(float)
+
+            for src_sent, tgt_sent in self.bitext:
+                src_sent = [self.src_vocab[w] for w in src_sent]
+                tgt_sent = [self.tgt_vocab[w] for w in tgt_sent]
+
+                f_len = len(src_sent)
+                e_len = len(tgt_sent)
+                e_len_key, f_len_key = self.bucketize(e_len, f_len)
+
+                for j in xrange(f_len):
+                    f_j = src_sent[j]
+                    f_j_subtotal = sum(theta[(e_i, f_j)] * align_prob[(i, j, f_len_key, e_len_key)] for i, e_i in enumerate(tgt_sent))
+
+                    for i in xrange(e_len):
+                        e_i = tgt_sent[i]
+                        c = theta[(e_i, f_j)] * align_prob[(i, j, f_len_key, e_len_key)] / f_j_subtotal
+                        counts_f_given_e[(e_i, f_j)] += c
+                        counts_e[e_i] += c
+                        counts_i_given_j[(i, j, f_len_key, e_len_key)] += c
+                        counts_j[(j, f_len_key, e_len_key)] += c
+
+            # M step
+            for e_i, f_j in counts_f_given_e:
+                theta[(e_i, f_j)] = counts_f_given_e[(e_i, f_j)] / counts_e[e_i]
+
+            for i, j, f_len, e_len in counts_i_given_j:
+                align_prob[(i, j, f_len, e_len)] = counts_i_given_j[(i, j, f_len, e_len)] / counts_j[(j, f_len, e_len)]
+
+            # compute log-likelihood
+            ll = 0.
+            for src_sent, tgt_sent in self.bitext:
+                src_sent = [self.src_vocab[w] for w in src_sent]
+                tgt_sent = [self.tgt_vocab[w] for w in tgt_sent]
+
+                e_len = len(tgt_sent)
+                f_len = len(src_sent)
+                e_len_key, f_len_key = self.bucketize(e_len, f_len)
+
+                p_F_given_E = np.log(self.epsilon)
+                for j, f_j in enumerate(src_sent):
+                    p_fj = 0.
+                    for i, e_i in enumerate(tgt_sent):
+                        p_fj += theta[(e_i, f_j)] * align_prob[(i, j, f_len_key, e_len_key)]
+
+                    p_F_given_E += np.log(p_fj)
+
+                ll += p_F_given_E / len(src_sent)
+
+            ll /= len(self.bitext)
+            print('avg. ll per word: %f' % ll)
+
+            self.theta = theta
+
+    def align(self):
+        alignments = []
+        for idx, (f, e) in enumerate(self.bitext):
+            cur_alignments = []
+            for j in xrange(len(f)):
+                # ARGMAX_j θ[i,j] or other alignment in Section 11.6 (e.g., Intersection, Union, etc)
+
+                f_j = f[j]
+
+                max_prob = -9999.
+                max_i = -1
+                for i, e_i in enumerate(e):
+                    prob = self.theta[(self.tgt_vocab[e_i], self.src_vocab[f_j])]
+                    if prob > max_prob:
+                        max_prob = prob
+                        max_i = i
+
+                if max_i == len(e) - 1:
+                    continue # skip the last null word in E
+
+                cur_alignments.append((j, max_i))
+
+            alignments.append(cur_alignments)
+
+        return alignments
+
+
+def grow_diag_final_and(src_len, tgt_len, e2f_alignments, f2e_alignments):
+    """
+    adapted from philipp koehn's book
+    """
+    neighboring = [(-1, 0), (0, -1), (1, 0), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
+    aligned = defaultdict(set)
+
+    alignments = set(e2f_alignments).intersection(set(f2e_alignments))
+    union_alignments = set(e2f_alignments).union(set(f2e_alignments))
+
+    for j, i in alignments:
+        aligned['f'].add(j)
+        aligned['e'].add(i)
+
+    def grow_diag():
+        has_new = True
+        while has_new:
+            has_new = False
+            for e_i in xrange(tgt_len):
+                for f_j in xrange(src_len):
+                    if (f_j, e_i) in alignments:
+                        for neighbor in neighboring:
+                            f_j_prime = neighbor[0] + f_j
+                            e_i_prime = neighbor[1] + e_i
+
+                            if (f_j_prime not in aligned['f'] and e_i_prime not in aligned['e']) \
+                                and (f_j_prime, e_i_prime) in union_alignments:
+                                alignments.add((f_j_prime, e_i_prime))
+                                aligned['e'].add(e_i_prime)
+                                aligned['f'].add(f_j_prime)
+                                has_new = True
+
+    def final(a):
+        for e_i in xrange(tgt_len):
+            for f_j in xrange(src_len):
+                if (f_j not in aligned['f'] and e_i not in aligned['e']) and (f_j, e_i) in a:
+                    alignments.add((f_j, e_i))
+                    aligned['f'].add(f_j)
+                    aligned['e'].add(e_i)
+
+    grow_diag()
+    final(e2f_alignments)
+    final(f2e_alignments)
+
+    return alignments
+
+
+def train_alignment(data):
+    bitext, src_vocab, tgt_vocab, max_iter = data
+    model1 = IBMModel1(bitext, src_vocab, tgt_vocab, max_iter)
+    model1.train()
+    model2 = IBMModel2(bitext, model1.theta, src_vocab, tgt_vocab)
+    model2.train()
+    alignments = model2.align()
+
+    return alignments
+
+
 if __name__ == '__main__':
     src_vocab = defaultdict(lambda: len(src_vocab))
     tgt_vocab = defaultdict(lambda: len(tgt_vocab))
@@ -157,30 +345,87 @@ if __name__ == '__main__':
 
         bitext.append((src_words, tgt_words))
 
-    fe_bitext = [(src_sent, tgt_sent + ['<null>']) for src_sent, tgt_sent in bitext]
-    ef_bitext = [(tgt_sent, src_sent + ['<null>']) for src_sent, tgt_sent in bitext]
+    if len(sys.argv[1:]) == 3:
+        fe_bitext = [(src_sent, tgt_sent + ['<null>']) for src_sent, tgt_sent in bitext]
+        ef_bitext = [(tgt_sent, src_sent + ['<null>']) for src_sent, tgt_sent in bitext]
 
-    # fe_model1 = IBMModel1(fe_bitext, src_vocab, tgt_vocab)
-    # fe_model1.train()
-    # fe_alignments = fe_model1.align()
+        alignments = Parallel(n_jobs=2)(delayed(train_alignment)(data) for data in
+                                        [(fe_bitext, src_vocab, tgt_vocab, 8),
+                                         (ef_bitext, tgt_vocab, src_vocab, 8)])
 
-    ef_model1 = IBMModel1(ef_bitext, tgt_vocab, src_vocab)
-    ef_model1.train()
-    ef_alignments = ef_model1.align()
+        fe_alignments, ef_alignments = alignments
 
-    # with open(sys.argv[3] + '.fe', 'w') as f:
-    #     for cur_alignments in fe_alignments:
-    #         line = ' '.join('%d-%d' % (i, j) for j, i in cur_alignments)
-    #         f.write(line + '\n')
+        # fe_model1 = IBMModel1(fe_bitext, src_vocab, tgt_vocab, max_iter=8)
+        # fe_model1.train()
+        # fe_alignments = fe_model1.align()
 
+        # ef_model1 = IBMModel1(ef_bitext, tgt_vocab, src_vocab, max_iter=8)
+        # ef_model1.train()
+        # ef_alignments = ef_model1.align()
+
+        # fe_model2 = IBMModel2(fe_bitext, fe_model1.theta, src_vocab, tgt_vocab, max_iter=10)
+        # fe_model2.train()
+        # fe_alignments = fe_model2.align()
+
+        # ef_model2 = IBMModel2(ef_bitext, ef_model1.theta, tgt_vocab, src_vocab, max_iter=10)
+        # ef_model2.train()
+        # ef_alignments = ef_model2.align()
+
+        with open(sys.argv[3] + '.f2e', 'w') as f:
+            for cur_alignments in fe_alignments:
+                line = ' '.join('%d-%d' % (i, j) for j, i in cur_alignments)
+                f.write(line + '\n')
+
+        with open(sys.argv[3] + '.e2f', 'w') as f:
+            for cur_alignments in ef_alignments:
+                line = ' '.join('%d-%d' % (i, j) for i, j in cur_alignments)
+                f.write(line + '\n')
+    else:
+        print('read in pre-trained alignments...')
+
+        # f2e alignments
+        fe_alignments = []
+        for line in open(sys.argv[4]):
+            d = line.strip().split(' ')
+            cur_alignments = []
+            for e in d:
+                e = e.split('-')
+                cur_alignments.append((int(e[1]), int(e[0])))
+
+            fe_alignments.append(cur_alignments)
+
+        # e2f alignments
+        ef_alignments = []
+        for line in open(sys.argv[5]):
+            d = line.strip().split(' ')
+            cur_alignments = []
+            for e in d:
+                e = e.split('-')
+                cur_alignments.append((int(e[0]), int(e[1])))
+
+            ef_alignments.append(cur_alignments)
+
+    # from nltk.translate.gdfa import grow_diag_final_and
     with open(sys.argv[3], 'w') as f:
-        for cur_alignments in ef_alignments:
-            line = ' '.join('%d-%d' % (i, j) for i, j in cur_alignments)
+        for idx, (f2e_cur_alignments, e2f_cur_alignments) in enumerate(zip(fe_alignments, ef_alignments)):
+            # valid_alignments = [(j, i) for j, i in fe_cur_alignments if (i, j) in ef_cur_alignments]  # intersection
+            # valid_alignments = sorted(set(fe_cur_alignments).union(set((j, i) for i, j in ef_cur_alignments)))
+            # f2e_align_str = ' '.join('%d-%d' % (j, i) for j, i in f2e_cur_alignments)
+            # e2f_align_str = ' '.join('%d-%d' % (j, i) for i, j in e2f_cur_alignments)
+
+            src_sent = bitext[idx][0]
+            tgt_sent = bitext[idx][1]
+
+            e2f_cur_alignments = [(j, i) for i, j in e2f_cur_alignments]
+            # alignments = f2e_cur_alignments
+
+            # alignments = set(f2e_cur_alignments).union(set(e2f_cur_alignments))
+
+            alignments = grow_diag_final_and(len(src_sent), len(tgt_sent), e2f_cur_alignments, f2e_cur_alignments)
+            if len(alignments) == 0:
+                alignments = e2f_cur_alignments
+
+            line = ' '.join('%d-%d' % (i, j) for j, i in alignments)
+            # line = ' '.join('%d-%d' % (i, j) for j, i in e2f_cur_alignments)
             f.write(line + '\n')
 
-    # with open(sys.argv[3], 'w') as f:
-    #     for fe_cur_alignments, ef_cur_alignments in zip(fe_alignments, ef_alignments):
-    #         valid_alignments = [(j, i) for j, i in fe_cur_alignments if (i, j) in ef_cur_alignments]
-    #         line = ' '.join('%d-%d' % (i, j) for j, i in valid_alignments)
-    #         # line = ' '.join('%d-%d' % (i, j) for i, j in ef_cur_alignments)
-    #         f.write(line + '\n')
