@@ -5,7 +5,10 @@ import sys
 from collections import defaultdict
 from joblib import Parallel, delayed
 import dill
+from nn.utils.io_utils import serialize_to_file
+import os
 
+ENABLE_NULL_ALIGNMENT = False
 
 def argmax_j(f, e_i, theta):
     max_prob = -9999.
@@ -132,7 +135,7 @@ class IBMModel1(object):
                         max_prob = prob
                         max_i = i
 
-                if max_i == len(e) - 1:
+                if ENABLE_NULL_ALIGNMENT and max_i == len(e) - 1:
                     continue # skip the last null word in E
 
                 cur_alignments.append((j, max_i))
@@ -149,6 +152,7 @@ class IBMModel2(object):
         self.src_vocab = src_vocab
         self.tgt_vocab = tgt_vocab
         self.theta = theta
+        self.align_prob = None
         self.epsilon = 1. / max(len(src_sent) for src_sent, tgt_sent in bitext)
 
     @staticmethod
@@ -241,6 +245,7 @@ class IBMModel2(object):
             print('avg. ll per word: %f' % ll)
 
             self.theta = theta
+            self.align_prob = align_prob
 
     def align(self):
         alignments = []
@@ -259,7 +264,7 @@ class IBMModel2(object):
                         max_prob = prob
                         max_i = i
 
-                if max_i == len(e) - 1:
+                if ENABLE_NULL_ALIGNMENT and max_i == len(e) - 1:
                     continue # skip the last null word in E
 
                 cur_alignments.append((j, max_i))
@@ -317,21 +322,33 @@ def grow_diag_final_and(src_len, tgt_len, e2f_alignments, f2e_alignments):
 
 
 def train_alignment(data):
-    bitext, src_vocab, tgt_vocab, max_iter = data
-    model1 = IBMModel1(bitext, src_vocab, tgt_vocab, max_iter)
+    bitext, src_vocab, tgt_vocab, dir = data
+    model1 = IBMModel1(bitext, src_vocab, tgt_vocab, max_iter=10)
     model1.train()
+    alignments_model1 = model1.align()
+
+    model1_f = os.path.join(os.path.split(sys.argv[3])[0], 'model1.%s.bin' % dir)
+    serialize_to_file(model1.theta, model1_f)
+    print('saved model1 parameters to: %s' % model1_f)
+
     model2 = IBMModel2(bitext, model1.theta, src_vocab, tgt_vocab)
     model2.train()
-    alignments = model2.align()
+    alignments_model2 = model2.align()
 
-    return alignments
+    model2_f = os.path.join(os.path.split(sys.argv[3])[0], 'model2.%s.bin' % dir)
+    serialize_to_file([model2.theta, model2.align_prob], model2_f)
+    print('saved model2 parameters to: %s' % model2_f)
+
+    return alignments_model1, alignments_model2
 
 
 if __name__ == '__main__':
     src_vocab = defaultdict(lambda: len(src_vocab))
     tgt_vocab = defaultdict(lambda: len(tgt_vocab))
-    src_vocab['<null>'] = 0
-    tgt_vocab['<null>'] = 0
+
+    if ENABLE_NULL_ALIGNMENT:
+        src_vocab['<null>'] = 0
+        tgt_vocab['<null>'] = 0
 
     bitext = []
     for src_sent, tgt_sent in zip(open(sys.argv[1]), open(sys.argv[2])):
@@ -345,15 +362,21 @@ if __name__ == '__main__':
 
         bitext.append((src_words, tgt_words))
 
-    if len(sys.argv[1:]) == 3:
+    print('num. bitext: %d' % len(bitext))
+
+    if ENABLE_NULL_ALIGNMENT:
         fe_bitext = [(src_sent, tgt_sent + ['<null>']) for src_sent, tgt_sent in bitext]
         ef_bitext = [(tgt_sent, src_sent + ['<null>']) for src_sent, tgt_sent in bitext]
+    else:
+        fe_bitext = [(src_sent, tgt_sent) for src_sent, tgt_sent in bitext]
+        ef_bitext = [(tgt_sent, src_sent) for src_sent, tgt_sent in bitext]
 
+    if len(sys.argv[1:]) == 3:
         alignments = Parallel(n_jobs=2)(delayed(train_alignment)(data) for data in
-                                        [(fe_bitext, src_vocab, tgt_vocab, 8),
-                                         (ef_bitext, tgt_vocab, src_vocab, 8)])
+                                        [(fe_bitext, src_vocab, tgt_vocab, 'f2e'),
+                                         (ef_bitext, tgt_vocab, src_vocab, 'e2f')])
 
-        fe_alignments, ef_alignments = alignments
+        (fe_alignments_model1, fe_alignments_model2), (ef_alignments_model1, ef_alignments_model2) = alignments
 
         # fe_model1 = IBMModel1(fe_bitext, src_vocab, tgt_vocab, max_iter=8)
         # fe_model1.train()
@@ -371,13 +394,25 @@ if __name__ == '__main__':
         # ef_model2.train()
         # ef_alignments = ef_model2.align()
 
-        with open(sys.argv[3] + '.f2e', 'w') as f:
-            for cur_alignments in fe_alignments:
+        fe_alignments, ef_alignments = ef_alignments_model2, ef_alignments_model2
+
+        with open(sys.argv[3] + '.f2e.model1', 'w') as f:
+            for cur_alignments in fe_alignments_model1:
                 line = ' '.join('%d-%d' % (i, j) for j, i in cur_alignments)
                 f.write(line + '\n')
 
-        with open(sys.argv[3] + '.e2f', 'w') as f:
-            for cur_alignments in ef_alignments:
+        with open(sys.argv[3] + '.e2f.model1', 'w') as f:
+            for cur_alignments in ef_alignments_model1:
+                line = ' '.join('%d-%d' % (i, j) for i, j in cur_alignments)
+                f.write(line + '\n')
+
+        with open(sys.argv[3] + '.f2e.model2', 'w') as f:
+            for cur_alignments in fe_alignments_model2:
+                line = ' '.join('%d-%d' % (i, j) for j, i in cur_alignments)
+                f.write(line + '\n')
+
+        with open(sys.argv[3] + '.e2f.model2', 'w') as f:
+            for cur_alignments in ef_alignments_model2:
                 line = ' '.join('%d-%d' % (i, j) for i, j in cur_alignments)
                 f.write(line + '\n')
     else:
@@ -421,9 +456,9 @@ if __name__ == '__main__':
 
             # alignments = set(f2e_cur_alignments).union(set(e2f_cur_alignments))
 
-            # alignments = grow_diag_final_and(len(src_sent), len(tgt_sent), e2f_cur_alignments, f2e_cur_alignments)
-            # if len(alignments) == 0:
-            #     alignments = e2f_cur_alignments
+            alignments = grow_diag_final_and(len(src_sent), len(tgt_sent), e2f_cur_alignments, f2e_cur_alignments)
+            if len(alignments) == 0:
+                alignments = e2f_cur_alignments
 
             line = ' '.join('%d-%d' % (i, j) for j, i in alignments)
             # line = ' '.join('%d-%d' % (i, j) for j, i in e2f_cur_alignments)
