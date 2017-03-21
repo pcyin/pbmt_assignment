@@ -59,7 +59,8 @@ class PhraseExtractor(object):
                     if len(sp) != 0 and all(i1 <= i <= i2 for i in sp):
                         e_phrase = e[i1: i2 + 1]
                         f_phrase = f[j1: j2 + 1]
-                        # extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
+                        # if self.is_valid_phrase_pair(f_phrase, e_phrase):
+                        #     extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
 
                         # Extend source phrase by adding unaligned words
                         j1_prime = j1
@@ -95,9 +96,10 @@ class PhraseExtractor(object):
 
             # nltk
             # cur_alignments_reversed = [(i, j) for j, i in cur_alignments] # english, german
-            # cur_extracted_phrases_nltk = phrase_extraction(' '.join(e), ' '.join(f), cur_alignments_reversed, max_phrase_length=3)
-            # for (i_1, i_2), (j_1, j_2), e_phrase, f_phrase in cur_extracted_phrases_nltk:
-            #     extracted_phrases_counts[e_phrase][f_phrase] += 1.
+            # cur_extracted_phrases_nltk = phrase_extraction(' '.join(f), ' '.join(e), cur_alignments, max_phrase_length=3)
+            # for (i_1, i_2), (j_1, j_2), f_phrase, e_phrase in cur_extracted_phrases_nltk:
+            #     if len(e_phrase.split(' ')) <= 3 and len(f_phrase.split(' ')) <= 3:
+            #         extracted_phrases_counts[e_phrase][f_phrase] += 1.
 
         # compute p(f|e)
         for e_phrase in extracted_phrases_counts:
