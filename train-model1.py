@@ -300,14 +300,15 @@ def grow_diag_final_and(src_len, tgt_len, e2f_alignments, f2e_alignments):
     adapted from philipp koehn's book
     """
     neighboring = [(-1, 0), (0, -1), (1, 0), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
-    aligned = defaultdict(set)
+    f_aligned = set()
+    e_aligned = set()
 
     alignments = set(e2f_alignments).intersection(set(f2e_alignments))
     union_alignments = set(e2f_alignments).union(set(f2e_alignments))
 
     for j, i in alignments:
-        aligned['f'].add(j)
-        aligned['e'].add(i)
+        f_aligned.add(j)
+        e_aligned.add(i)
 
     def grow_diag():
         has_new = True
@@ -320,20 +321,20 @@ def grow_diag_final_and(src_len, tgt_len, e2f_alignments, f2e_alignments):
                             f_j_prime = neighbor[0] + f_j
                             e_i_prime = neighbor[1] + e_i
 
-                            if (f_j_prime not in aligned['f'] and e_i_prime not in aligned['e']) \
+                            if (f_j_prime not in f_aligned and e_i_prime not in e_aligned) \
                                 and (f_j_prime, e_i_prime) in union_alignments:
                                 alignments.add((f_j_prime, e_i_prime))
-                                aligned['e'].add(e_i_prime)
-                                aligned['f'].add(f_j_prime)
+                                e_aligned.add(e_i_prime)
+                                f_aligned.add(f_j_prime)
                                 has_new = True
 
     def final(a):
         for e_i in xrange(tgt_len):
             for f_j in xrange(src_len):
-                if (f_j not in aligned['f'] and e_i not in aligned['e']) and (f_j, e_i) in a:
+                if (f_j not in f_aligned and e_i not in e_aligned) and (f_j, e_i) in a:
                     alignments.add((f_j, e_i))
-                    aligned['f'].add(f_j)
-                    aligned['e'].add(e_i)
+                    f_aligned.add(f_j)
+                    e_aligned.add(e_i)
 
     grow_diag()
     final(e2f_alignments)
@@ -477,7 +478,6 @@ if __name__ == '__main__':
 
             ef_alignments.append(cur_alignments)
 
-    # from nltk.translate.gdfa import grow_diag_final_and
     with open(sys.argv[3], 'w') as f:
         for idx, (f2e_cur_alignments, e2f_cur_alignments) in enumerate(zip(fe_alignments, ef_alignments)):
             # valid_alignments = [(j, i) for j, i in fe_cur_alignments if (i, j) in ef_cur_alignments]  # intersection
