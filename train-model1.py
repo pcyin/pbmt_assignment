@@ -446,13 +446,13 @@ if __name__ == '__main__':
         fe_model2.align_prob = fe_model2_align_prob
         fe_alignments_model2 = fe_model2.align()
 
-        fe_model2_theta, fe_model2_align_prob = deserialize_from_file('output_no_null_efhack/model2.e2f.bin')
+        ef_model2_theta, ef_model2_align_prob = deserialize_from_file('output_no_null_efhack/model2.e2f.bin')
 
-        ef_model2 = IBMModel2(ef_bitext, fe_model2_theta, tgt_vocab, src_vocab, max_iter=10, dir='e2f')
-        ef_model2.align_prob = fe_model2_align_prob
+        ef_model2 = IBMModel2(ef_bitext, ef_model2_theta, tgt_vocab, src_vocab, max_iter=10, dir='e2f')
+        ef_model2.align_prob = ef_model2_align_prob
         ef_alignments_model2 = ef_model2.align()
 
-        fe_alignments, ef_alignments = ef_alignments_model2, ef_alignments_model2
+        fe_alignments, ef_alignments = fe_alignments_model2, ef_alignments_model2
     else:
         print('read in pre-trained alignments... [%s] and [%s]' % (sys.argv[4], sys.argv[5]))
 
@@ -489,13 +489,14 @@ if __name__ == '__main__':
             tgt_sent = bitext[idx][1]
 
             # e2f_cur_alignments = [(j, i) for i, j in e2f_cur_alignments]
-            alignments = e2f_cur_alignments
+            # alignments = e2f_cur_alignments
 
-            # alignments = set(f2e_cur_alignments).union(set(e2f_cur_alignments))
+            alignments = set(f2e_cur_alignments).union(set(e2f_cur_alignments))
 
-            # alignments = grow_diag_final_and(len(src_sent), len(tgt_sent), e2f_cur_alignments, f2e_cur_alignments)
+            alignments = grow_diag_final_and(len(src_sent), len(tgt_sent), e2f_cur_alignments, f2e_cur_alignments)
+            # print(alignments)
             # if len(alignments) == 0:
-            #     alignments = e2f_cur_alignments
+            #    alignments = e2f_cur_alignments
 
             line = ' '.join('%d-%d' % (i, j) for j, i in alignments)
             # line = ' '.join('%d-%d' % (i, j) for j, i in e2f_cur_alignments)
