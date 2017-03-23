@@ -456,9 +456,9 @@ if __name__ == '__main__':
 
             # alignments = set(f2e_cur_alignments).union(set(e2f_cur_alignments))
 
-            alignments = grow_diag_final_and(len(src_sent), len(tgt_sent), e2f_cur_alignments, f2e_cur_alignments)
-            if len(alignments) == 0:
-                alignments = e2f_cur_alignments
+            # alignments = grow_diag_final_and(len(src_sent), len(tgt_sent), e2f_cur_alignments, f2e_cur_alignments)
+            # if len(alignments) == 0:
+            #     alignments = e2f_cur_alignments
 
             line = ' '.join('%d-%d' % (i, j) for j, i in alignments)
             # line = ' '.join('%d-%d' % (i, j) for j, i in e2f_cur_alignments)
