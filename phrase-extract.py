@@ -59,22 +59,23 @@ class PhraseExtractor(object):
                     if len(sp) != 0 and all(i1 <= i <= i2 for i in sp):
                         e_phrase = e[i1: i2 + 1]
                         f_phrase = f[j1: j2 + 1]
-                        # if self.is_valid_phrase_pair(f_phrase, e_phrase):
-                        #     extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
+
+                        if self.is_valid_phrase_pair(f_phrase, e_phrase):
+                            extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
 
                         # Extend source phrase by adding unaligned words
-                        j1_prime = j1
-                        while j1_prime >= 0 and (j1_prime == j1 or len(f_aligned_words[j1_prime]) == 0):  # Check that j1 is unaligned
-                            j2_prime = j2
-                            while j2_prime < len(f) and (j2_prime == j2 or len(f_aligned_words[j2_prime]) == 0):  # Check that j2 is unaligned
-                                f_phrase = f[j1_prime: j2_prime + 1]
-
-                                if self.is_valid_phrase_pair(f_phrase, e_phrase):
-                                    extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
-
-                                j2_prime += 1
-
-                            j1_prime -= 1
+                        # j1_prime = j1
+                        # while j1_prime >= 0 and (j1_prime == j1 or len(f_aligned_words[j1_prime]) == 0):  # Check that j1 is unaligned
+                        #     j2_prime = j2
+                        #     while j2_prime < len(f) and (j2_prime == j2 or len(f_aligned_words[j2_prime]) == 0):  # Check that j2 is unaligned
+                        #         f_phrase = f[j1_prime: j2_prime + 1]
+                        #
+                        #         if self.is_valid_phrase_pair(f_phrase, e_phrase):
+                        #             extracted_phrases.append((' '.join(f_phrase), ' '.join(e_phrase)))
+                        #
+                        #         j2_prime += 1
+                        #
+                        #     j1_prime -= 1
 
         return extracted_phrases
 

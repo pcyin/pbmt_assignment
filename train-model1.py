@@ -7,11 +7,10 @@ from joblib import Parallel, delayed
 import cPickle as pkl
 from nn.utils.io_utils import serialize_to_file, deserialize_from_file
 import dill
+from nn.utils.io_utils import serialize_to_file
 import os
 
 ENABLE_NULL_ALIGNMENT = False
-LOAD_PARAMS = True
-
 
 def argmax_j(f, e_i, theta):
     max_prob = -9999.
@@ -345,7 +344,7 @@ def grow_diag_final_and(src_len, tgt_len, e2f_alignments, f2e_alignments):
 
 def train_alignment(data):
     bitext, src_vocab, tgt_vocab, dir = data
-    model1 = IBMModel1(bitext, src_vocab, tgt_vocab, max_iter=10, dir=dir)
+    model1 = IBMModel1(bitext, src_vocab, tgt_vocab, max_iter=10)
     model1.train()
     alignments_model1 = model1.align()
 
@@ -353,7 +352,7 @@ def train_alignment(data):
     serialize_to_file(model1.theta, model1_f)
     print('saved model1 parameters to: %s' % model1_f)
 
-    model2 = IBMModel2(bitext, model1.theta, src_vocab, tgt_vocab, dir=dir)
+    model2 = IBMModel2(bitext, model1.theta, src_vocab, tgt_vocab)
     model2.train()
     alignments_model2 = model2.align()
 
@@ -425,7 +424,17 @@ if __name__ == '__main__':
 
         with open(sys.argv[3] + '.e2f.model1', 'w') as f:
             for cur_alignments in ef_alignments_model1:
+                line = ' '.join('%d-%d' % (i, j) for i, j in cur_alignments)
+                f.write(line + '\n')
+
+        with open(sys.argv[3] + '.f2e.model2', 'w') as f:
+            for cur_alignments in fe_alignments_model2:
                 line = ' '.join('%d-%d' % (i, j) for j, i in cur_alignments)
+                f.write(line + '\n')
+
+        with open(sys.argv[3] + '.e2f.model2', 'w') as f:
+            for cur_alignments in ef_alignments_model2:
+                line = ' '.join('%d-%d' % (i, j) for i, j in cur_alignments)
                 f.write(line + '\n')
 
         with open(sys.argv[3] + '.f2e.model2', 'w') as f:
